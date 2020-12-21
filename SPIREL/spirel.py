@@ -11,7 +11,6 @@ class SPIREL(object):
 	def __init__(self, dataset, params, sess):
 		# dataset & session
 		[self.user_train, self.user_test, self.user_num, self.item_num] = dataset
-		self.output_path = params.output_path
 		self._sess = sess
 		
 		# hyper-parameter
@@ -109,7 +108,6 @@ class SPIREL(object):
 			user_item_loss, item_item_loss, user_item_loss_l2, item_item_loss_l2, batch_loss, reg_loss
 		
 		self.optimize(cur_user, user_item_loss, item_item_loss, reg_loss)
-		#self.optimize_sgd(cur_user, user_item_loss, item_item_loss, reg_loss)
 			
 	def forward(self, cur_user, cur_item):
 		# model parameter
@@ -188,36 +186,6 @@ class SPIREL(object):
 		perturbed_gradient = [(total_grads, var) for grad, var in gvs]
 		train_op = optimizer.apply_gradients(perturbed_gradient, global_step=self._global_step)
 		self._train_op = train_op
-		
-	def optimize_sgd(self, cur_user, user_item_loss, item_item_loss, reg_loss):
-		# calculate
-		cur_batch_size = tf.shape(cur_user)[0]
-		
-		# optimizer
-		optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate=self.learning_rate)
-		user_gvs = optimizer.compute_gradients(user_item_loss + reg_loss, [self._item_embeddings])
-		item_gvs = optimizer.compute_gradients(item_item_loss + reg_loss, [self._item_embeddings])
-		
-		# item embedding update
-		item_grads = tf.squeeze(tf.gradients(item_item_loss + reg_loss, [self._item_embeddings]))
-		selected_item_loss = tf.gather_nd(user_item_loss, self._item_ind)
-		user_emb = tf.gather_nd(self._user_embeddings, self._emb_dim_ind)
-		user_grads = tf.multiply(selected_item_loss, user_emb)
-		user_grads = tf.clip_by_value(user_grads, -1.0, 1.0)
-		user_grads = (user_grads * (tf.exp(self.epsilon * (1 - self.budget_ratio)) - 1) + (tf.exp(self.epsilon * (1 - self.budget_ratio)) + 1)) / (2*tf.exp(self.epsilon * (1 - self.budget_ratio) / self.epoches) + 2)
-		
-		prob = tf.random.uniform([cur_batch_size], minval=0.0, maxval=1.0)
-		user_grads = (tf.cast(user_grads < prob, tf.float32) - 0.5) * 2 * \
-			self.item_num * self.emb_dim * (tf.exp(self.epsilon * (1 - self.budget_ratio)) + 1) / (tf.exp(self.epsilon * (1 - self.budget_ratio)) - 1)
-		user_grads /= tf.cast(cur_batch_size, tf.float32)
-		
-		total_grads = tf.tensor_scatter_nd_add(item_grads, self._grad_ind, user_grads)
-		
-		# optimize	
-		user_train_op = optimizer.apply_gradients(user_gvs, global_step=self._global_step)
-		perturbed_gradient = [(total_grads, var) for grad, var in item_gvs]
-		item_train_op = optimizer.apply_gradients(perturbed_gradient, global_step=self._global_step)
-		self._user_train_op, self._item_train_op = user_train_op, item_train_op
 	
 	def train(self, is_eval):
 		start = time.time()
@@ -272,11 +240,7 @@ class SPIREL(object):
 			[_, _, user_item_loss_l2, item_item_loss_l2, batch_loss, reg_loss] = self._sess.run(
 				[self._update_user, self._train_op, self._user_item_loss_l2, self._item_item_loss_l2, self._batch_loss, self._reg_loss],
 				feed_dict=feed_dict)
-			'''
-			[_, _, user_item_loss_l2, item_item_loss_l2, batch_loss, reg_loss] = self._sess.run(
-				[self._user_train_op, self._item_train_op, self._user_item_loss_l2, self._item_item_loss_l2, self._batch_loss, self._reg_loss],
-				feed_dict=feed_dict)
-			'''
+
 			print("step: ", b_i + 1, " total_loss: ", batch_loss + reg_loss, " reg_loss :", reg_loss, " user_loss: " , user_item_loss_l2, " item_loss :", item_item_loss_l2)
 			
 			# evaluation
@@ -290,21 +254,7 @@ class SPIREL(object):
 						tf.compat.v1.assign(self.best_hr, avg_test_hr),
 						tf.compat.v1.assign(self.best_mrr, avg_test_mrr),
 						tf.compat.v1.assign(self.best_iter, b_i)])
-						
-		# result
-		print("time :", time.time() - start)
-		f = open('../result/SPIREL/' + self.output_path + '.txt', 'a')
-		'''
-		if last_hr < self.best_hr.eval():
-			f.write('%f	%f\n' %(round(self.best_hr.eval(), 4), round(self.best_mrr.eval(), 4)))
-		else:
-			f.write('%f	%f\n' %(round(last_hr, 4), round(last_mrr, 4)))
-		'''
-		f.write('%f	%f\n' %(round(last_hr, 4), round(last_mrr, 4)))
-		print('best_hr:', round(self.best_hr.eval(), 4))
-		print('best_mrr:', round(self.best_mrr.eval(), 4))
-		f.close()
-		
+					
 	def get_matrix(self):
 		user_item_indices, item_item_indices = list(), list()
 		user_item_matrix = np.zeros([self.user_num, self.item_num], dtype=np.int32)

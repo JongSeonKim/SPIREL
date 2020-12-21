@@ -5,8 +5,6 @@ import tensorflow as tf
 
 from params import Params
 from spirel import SPIREL
-from spirel_np import SPIREL_NP
-from spirel_pm import SPIREL_PM
 				
 def main(_):
 	params = Params()
@@ -24,8 +22,6 @@ def main(_):
 		sess = tf.compat.v1.Session(config=config)
 		with sess.as_default():
 			model = SPIREL(dataset, params, sess)
-			#model = SPIREL_NP(dataset, params, sess)
-			#model = SPIREL_PM(dataset, params, sess)
 			model.train(True)
 			
 if __name__ == "__main__":
